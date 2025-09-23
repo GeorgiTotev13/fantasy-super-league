@@ -600,23 +600,23 @@ def main():
     with c4:
         gw_to = st.number_input("GW to", min_value=int(events_df["event"].min()), max_value=int(events_df["event"].max()), value=int(events_df["event"].max()))
     with c5:
-    metric_label = st.selectbox(
-        "Metric",
-        [
-            ("points", "Total GW points (net) – Z→A"),          # from FPL history (already net)
-            ("total_points", "Overall season points – Z→A"),
-            ("chip_used", "Chips used – A→Z"),
-            ("transfers", "Transfers made – A→Z"),
-            ("goals_starting_xi", "Goals by starting XI – Z→A"),
-            ("captain_points", "Captain points (with C/TC) – Z→A"),
-            ("captain_base_points", "Captain points (raw, undoubled) – Z→A"),
-            ("transfer_efficiency", "Transfer efficiency – Z→A"),
-            ("points_on_bench", "Bench points – Z→A"),
-            ("transfers_cost", "Hit cost – A→Z"),
-        ],
-        index=0,
-        format_func=lambda x: x[1],
-    )
+        metric_label = st.selectbox(
+            "Metric",
+            [
+                ("points", "Total GW points (net) – Z→A"),          # from FPL history (already net)
+                ("total_points", "Overall season points – Z→A"),
+                ("chip_used", "Chips used – A→Z"),
+                ("transfers", "Transfers made – A→Z"),
+                ("goals_starting_xi", "Goals by starting XI – Z→A"),
+                ("captain_points", "Captain points (with C/TC) – Z→A"),
+                ("captain_base_points", "Captain points (raw, undoubled) – Z→A"),
+                ("transfer_efficiency", "Transfer efficiency – Z→A"),
+                ("points_on_bench", "Bench points – Z→A"),
+                ("transfers_cost", "Hit cost – A→Z"),
+            ],
+            index=0,
+            format_func=lambda x: x[1],
+        )
     metric = metric_label[0]
 
 
