@@ -415,7 +415,7 @@ def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int) -> pd.DataFram
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.points + tes.transfers_cost ELSE 0 END) AS total_points_raw,
                 -- hit cost
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.transfers_cost ELSE 0 END) AS hit_cost,
-                -- net points (already includes hit costs in tes.points)
+                -- net points (FPL points, already net of hits)
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.points ELSE 0 END) AS total_points_net,
                 -- chips used
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.chip_used ELSE 0 END) AS chips_used,
