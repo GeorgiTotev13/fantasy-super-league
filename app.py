@@ -663,32 +663,32 @@ if not mlb.empty:
     st.dataframe(mlb, use_container_width=True, hide_index=True)
     
     if not mlb.empty:
-st.dataframe(mlb, use_container_width=True, hide_index=True)
+        st.dataframe(mlb, use_container_width=True, hide_index=True)
 
-# Consistency check: does Raw - Hits = Net ?
-try:
-    raw = mlb["Точки (бруто)"].sum()
-    hits = mlb["Минуси от трансфери"].sum()
-    net = mlb["Точки"].sum()
-    if abs((raw - hits) - net) < 1e-6:
-        st.success("Проверка: Точки (бруто) – Минуси от трансфери = Точки ✅")
-    else:
-        st.error("Проверка: Разминаване! Проверете настройката 'points_are_raw' ❌")
-except Exception:
-    pass
+        # Consistency check: does Raw - Hits = Net ?
+    try:
+        raw = mlb["Точки (бруто)"].sum()
+        hits = mlb["Минуси от трансфери"].sum()
+        net = mlb["Точки"].sum()
+        if abs((raw - hits) - net) < 1e-6:
+            st.success("Проверка: Точки (бруто) – Минуси от трансфери = Точки ✅")
+        else:
+            st.error("Проверка: Разминаване! Проверете настройката 'points_are_raw' ❌")
+    except Exception:
+        pass
 
-        # Downloads
-        csv = mlb.to_csv(index=False).encode("utf-8")
-        st.download_button("Download CSV", data=csv, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.csv", mime="text/csv")
-        try:
-            png_bytes, jpg_bytes = monthly_leaderboard_image(mlb, title=f"Monthly Leaderboard • GW {gw_from}–{gw_to}")
-            st.download_button("Download PNG (hi‑res)", data=png_bytes, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.png", mime="image/png")
-            st.download_button("Download JPEG (hi‑res)", data=jpg_bytes, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.jpg", mime="image/jpeg")
-            st.image(png_bytes, caption="Preview (PNG)", use_column_width=True)
-        except Exception as e:
-            st.warning(f"Could not render image export: {e}")
-    else:
-        st.info("No data for the selected range yet. Try importing or widen the GW range.")
+    # Downloads
+    csv = mlb.to_csv(index=False).encode("utf-8")
+    st.download_button("Download CSV", data=csv, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.csv", mime="text/csv")
+    try:
+        png_bytes, jpg_bytes = monthly_leaderboard_image(mlb, title=f"Monthly Leaderboard • GW {gw_from}–{gw_to}")
+        st.download_button("Download PNG (hi‑res)", data=png_bytes, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.png", mime="image/png")
+        st.download_button("Download JPEG (hi‑res)", data=jpg_bytes, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.jpg", mime="image/jpeg")
+        st.image(png_bytes, caption="Preview (PNG)", use_column_width=True)
+    except Exception as e:
+        st.warning(f"Could not render image export: {e}")
+else:
+    st.info("No data for the selected range yet. Try importing or widen the GW range.")
 
     st.divider()
 
