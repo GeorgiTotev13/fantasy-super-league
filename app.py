@@ -386,18 +386,37 @@ def get_roster_df(league_id: int) -> pd.DataFrame:
 
 
 def leaderboard_period(league_id: int, gw_from: int, gw_to: int, metric: str) -> pd.DataFrame:
+    """Period leaderboard. 'points' means NET points = points - transfers_cost.
+       Also supports points_raw and other stored metrics.
+    """
+    metric_expr = {
+        "points": "tes.points - tes.transfers_cost",   # NET ✅
+        "points_raw": "tes.points",                    # RAW (before hits)
+        "captain_points": "tes.captain_points",
+        "captain_base_points": "tes.captain_base_points",
+        "transfer_efficiency": "tes.transfer_efficiency",
+        "points_on_bench": "tes.points_on_bench",
+        "transfers_cost": "tes.transfers_cost",
+        "transfers": "tes.transfers",
+        "chip_used": "tes.chip_used",
+        "goals_starting_xi": "tes.goals_starting_xi",
+        # (Intentionally not exposing 'total_points' here since it’s cumulative per season)
+    }
+    expr = metric_expr.get(metric, "tes.points - tes.transfers_cost")  # default to NET
+
     with get_conn() as conn:
-        base = """
+        sql = f"""
         SELECT tes.entry_id, t.player_name, t.team_name,
-               SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN {metric} ELSE 0 END) AS value
+               SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN {expr} ELSE 0 END) AS value
         FROM team_event_stats tes
         JOIN teams t ON t.entry_id = tes.entry_id
         WHERE t.league_id = ?
         GROUP BY tes.entry_id
         ORDER BY value DESC
-        """.format(metric=metric)
-        df = pd.read_sql_query(base, conn, params=(gw_from, gw_to, league_id))
+        """
+        df = pd.read_sql_query(sql, conn, params=(gw_from, gw_to, league_id))
         return df
+
 
 def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int) -> pd.DataFrame:
     """Combined leaderboard with multi-criteria ordering for the selected GW range.
