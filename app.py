@@ -317,19 +317,21 @@ def ingest_league(league_id: int) -> pd.DataFrame:
                 except Exception:
                     picks = {"picks": [], "active_chip": None}
                 # Captain logic (handles Triple Captain too)
-captain_element = 0
-captain_base_points = 0
-captain_total_points = 0
+                captain_element = 0
+                captain_base_points = 0
+                captain_total_points = 0
 
-for p in picks.get("picks", []):
-    if p.get("is_captain"):
-        captain_element = p["element"]
-        base = elem_points.get(captain_element, 0)
-        mult = p.get("multiplier", 1)  # 2 for captain, 3 for triple captain
-        captain_base_points = base
-        captain_total_points = base * mult
-        break
+                for p in picks.get("picks", []):
+                    if p.get("is_captain"):
+                        captain_element = p["element"]
+                        base = elem_points.get(captain_element, 0)
+                        mult = p.get("multiplier", 1)  # 2 for captain, 3 for triple captain
+                        captain_base_points = base
+                        captain_total_points = base * mult
+                        break
+
                 active_chip = picks.get("active_chip")
+
                 # Goals by starting XI (include bench if Bench Boost played)
                 goals_ids = []
                 for p in picks.get("picks", []):
