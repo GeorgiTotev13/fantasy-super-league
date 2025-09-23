@@ -655,27 +655,27 @@ asc = metric in ("chip_used", "transfers", "transfers_cost")
 lb = lb.sort_values("value", ascending=asc)
 st.dataframe(lb.rename(columns={"value": metric}), use_container_width=True, hide_index=True)
 
-    st.caption("Notes: Total points already include hit costs. 'Chips used' counts GWs where any chip was active. 'Goals by starting XI' includes bench only when Bench Boost was active.")
+st.caption("Notes: Total points already include hit costs. 'Chips used' counts GWs where any chip was active. 'Goals by starting XI' includes bench only when Bench Boost was active.")
 
-    st.subheader("Monthly Leaderboard (multi‑criteria)")
-    mlb = monthly_leaderboard(league_id, gw_from, gw_to, points_are_raw=points_are_raw)
-    if not mlb.empty:
-        st.dataframe(mlb, use_container_width=True, hide_index=True)
-        
-        if not mlb.empty:
+st.subheader("Monthly Leaderboard (multi‑criteria)")
+mlb = monthly_leaderboard(league_id, gw_from, gw_to, points_are_raw=points_are_raw)
+if not mlb.empty:
     st.dataframe(mlb, use_container_width=True, hide_index=True)
+    
+    if not mlb.empty:
+st.dataframe(mlb, use_container_width=True, hide_index=True)
 
-    # Consistency check: does Raw - Hits = Net ?
-    try:
-        raw = mlb["Точки (бруто)"].sum()
-        hits = mlb["Минуси от трансфери"].sum()
-        net = mlb["Точки"].sum()
-        if abs((raw - hits) - net) < 1e-6:
-            st.success("Проверка: Точки (бруто) – Минуси от трансфери = Точки ✅")
-        else:
-            st.error("Проверка: Разминаване! Проверете настройката 'points_are_raw' ❌")
-    except Exception:
-        pass
+# Consistency check: does Raw - Hits = Net ?
+try:
+    raw = mlb["Точки (бруто)"].sum()
+    hits = mlb["Минуси от трансфери"].sum()
+    net = mlb["Точки"].sum()
+    if abs((raw - hits) - net) < 1e-6:
+        st.success("Проверка: Точки (бруто) – Минуси от трансфери = Точки ✅")
+    else:
+        st.error("Проверка: Разминаване! Проверете настройката 'points_are_raw' ❌")
+except Exception:
+    pass
 
         # Downloads
         csv = mlb.to_csv(index=False).encode("utf-8")
