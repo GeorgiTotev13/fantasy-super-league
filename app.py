@@ -90,6 +90,24 @@ CREATE TABLE IF NOT EXISTS transfers (
 );
 """
 
+def _points_sql_expr(points_are_raw: bool) -> dict:
+    """
+    Return SQL snippets for raw/net/hit expressions depending on how 'tes.points' should be interpreted.
+    If points_are_raw=True:   points = raw, net = points - transfers_cost
+    If points_are_raw=False:  points = net,  raw = points + transfers_cost
+    """
+    if points_are_raw:
+        return {
+            "raw": "tes.points",
+            "net": "tes.points - tes.transfers_cost",
+            "hits": "tes.transfers_cost",
+        }
+    else:
+        return {
+            "raw": "tes.points + tes.transfers_cost",
+            "net": "tes.points",
+            "hits": "tes.transfers_cost",
+        }
 
 def get_conn():
     return sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -370,13 +388,14 @@ def get_roster_df(league_id: int) -> pd.DataFrame:
         )
 
 
-def leaderboard_period(league_id: int, gw_from: int, gw_to: int, metric: str) -> pd.DataFrame:
-    """Flexible period leaderboard.
-    Supports derived metrics like points_net = points - transfers_cost.
+def leaderboard_period(league_id: int, gw_from: int, gw_to: int, metric: str, points_are_raw: bool = True) -> pd.DataFrame:
     """
+    Flexible period leaderboard. Supports derived metrics like points_net/raw driven by the 'points_are_raw' flag.
+    """
+    exprs = _points_sql_expr(points_are_raw)
     metric_expr = {
-        "points_net": "tes.points - tes.transfers_cost",
-        "points_raw": "tes.points",
+        "points_net": exprs["net"],
+        "points_raw": exprs["raw"],
         "captain_points": "tes.captain_points",
         "captain_base_points": "tes.captain_base_points",
         "transfer_efficiency": "tes.transfer_efficiency",
@@ -385,7 +404,7 @@ def leaderboard_period(league_id: int, gw_from: int, gw_to: int, metric: str) ->
         "transfers": "tes.transfers",
         "chip_used": "tes.chip_used",
     }
-    expr = metric_expr.get(metric, "tes.points - tes.transfers_cost")
+    expr = metric_expr.get(metric, exprs["net"])  # default to net points
 
     with get_conn() as conn:
         sql = f"""
@@ -398,43 +417,45 @@ def leaderboard_period(league_id: int, gw_from: int, gw_to: int, metric: str) ->
         ORDER BY value DESC
         """
         df = pd.read_sql_query(sql, conn, params=(gw_from, gw_to, league_id))
-        return df
+    return df
 
-def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int) -> pd.DataFrame:
-    """Combined leaderboard with multi-criteria ordering for the selected GW range.
-    Order: total_points_net DESC, chips_used ASC, transfers_made ASC,
-           goals_starting_xi DESC, captain_points DESC.
-    Also returns columns for each metric.
+
+def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int, points_are_raw: bool = True) -> pd.DataFrame:
     """
+    Combined leaderboard for the selected GW range.
+    Order: total_points_net DESC, chips_used ASC, transfers_made ASC, goals_starting_xi DESC, captain_points DESC.
+    """
+    expr = _points_sql_expr(points_are_raw)
+
     with get_conn() as conn:
-        sql = """
+        sql = f"""
             SELECT
                 t.entry_id,
                 t.player_name,
                 t.team_name,
-                -- raw points (points + hits)
-                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.points + tes.transfers_cost ELSE 0 END) AS total_points_raw,
-                -- hit cost
-                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.transfers_cost ELSE 0 END) AS hit_cost,
-                -- net points (already includes hit costs in tes.points)
-                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.points ELSE 0 END) AS total_points_net,
+                -- raw points (before hits)
+                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN {expr['raw']} ELSE 0 END) AS total_points_raw,
+                -- hit cost (positive)
+                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN {expr['hits']} ELSE 0 END) AS hit_cost,
+                -- net points (after hits)
+                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN {expr['net']} ELSE 0 END) AS total_points_net,
                 -- chips used
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.chip_used ELSE 0 END) AS chips_used,
                 -- transfers made
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.transfers ELSE 0 END) AS transfers_made,
                 -- goals by XI
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.goals_starting_xi ELSE 0 END) AS goals_starting_xi,
-                -- captain raw points
-                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.captain_base_points ELSE 0 END) AS captain_points
+                -- captain contribution (with C/TC multiplier)
+                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.captain_points ELSE 0 END) AS captain_points
             FROM team_event_stats tes
             JOIN teams t ON t.entry_id = tes.entry_id
             WHERE t.league_id = ?
             GROUP BY t.entry_id, t.player_name, t.team_name
         """
         params = (
-            gw_from, gw_to,   # total_points_raw
-            gw_from, gw_to,   # hit_cost
-            gw_from, gw_to,   # total_points_net
+            gw_from, gw_to,   # raw
+            gw_from, gw_to,   # hits
+            gw_from, gw_to,   # net
             gw_from, gw_to,   # chips_used
             gw_from, gw_to,   # transfers_made
             gw_from, gw_to,   # goals_starting_xi
@@ -442,20 +463,39 @@ def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int) -> pd.DataFram
             league_id,
         )
         df = pd.read_sql_query(sql, conn, params=params)
-        df = df.sort_values(
-            by=["total_points_net", "chips_used", "transfers_made", "goals_starting_xi", "captain_points"],
-            ascending=[False, True, True, False, False],
-            kind="mergesort",
-        ).reset_index(drop=True)
-        df.insert(0, "rank", df.index + 1)
-        cols = [
-            "rank", "player_name", "team_name",
-            "total_points_net", "chips_used", "transfers_made", "goals_starting_xi", "captain_points",
-            "total_points_raw", "hit_cost",
-        ]
-        existing = [c for c in cols if c in df.columns]
-        df = df[existing]
-        return df
+
+    df = df.sort_values(
+        by=["total_points_net", "chips_used", "transfers_made", "goals_starting_xi", "captain_points"],
+        ascending=[False, True, True, False, False],
+        kind="mergesort",
+    ).reset_index(drop=True)
+
+    df.insert(0, "rank", df.index + 1)
+
+    cols = [
+        "rank", "player_name", "team_name",
+        "total_points_net", "chips_used", "transfers_made",
+        "goals_starting_xi", "captain_points",
+        "total_points_raw", "hit_cost",
+    ]
+    existing = [c for c in cols if c in df.columns]
+    df = df[existing]
+
+    # Bulgarian labels (adjust freely)
+    df = df.rename(columns={
+        "rank": "Позиция",
+        "player_name": "Мениджър",
+        "team_name": "Отбор",
+        "total_points_net": "Точки",
+        "chips_used": "Използвани чипове",
+        "transfers_made": "Трансфери",
+        "goals_starting_xi": "Отбелязани голове",
+        "captain_points": "Точки от капитан",
+        "total_points_raw": "Точки (бруто)",
+        "hit_cost": "Минуси от трансфери",
+    })
+    return df
+
 
 def monthly_leaderboard_image(df: pd.DataFrame, title: str = "Monthly Leaderboard") -> tuple[bytes, bytes]:
     """Render the monthly leaderboard DataFrame to a high‑resolution PNG and JPEG.
@@ -591,8 +631,25 @@ def main():
             format_func=lambda x: x[1],
         )
     metric = metric_label[0]
+    
+c3, c4, c5 = st.columns(3)
+with c3:
+    gw_from = st.number_input("GW from", ...)
+with c4:
+    gw_to = st.number_input("GW to", ...)
+with c5:
+    metric_label = st.selectbox( ... )
+metric = metric_label[0]
 
-    lb = leaderboard_period(league_id, gw_from, gw_to, metric)
+# ⬇️ Insert toggle here
+points_are_raw = st.toggle(
+    "Treat GW 'points' as raw (before hits)",
+    value=True,
+    help="ON = points are raw from API (subtract hits to get net). OFF = points are already net, add hits back to get raw."
+)
+
+
+    lb = leaderboard_period(league_id, gw_from, gw_to, metric, points_are_raw=points_are_raw)
     # Ascending for counts/costs, descending for scores
     asc = metric in ("chip_used", "transfers", "transfers_cost")
     lb = lb.sort_values("value", ascending=asc)
@@ -601,9 +658,25 @@ def main():
     st.caption("Notes: Total points already include hit costs. 'Chips used' counts GWs where any chip was active. 'Goals by starting XI' includes bench only when Bench Boost was active.")
 
     st.subheader("Monthly Leaderboard (multi‑criteria)")
-    mlb = monthly_leaderboard(league_id, gw_from, gw_to)
+    mlb = monthly_leaderboard(league_id, gw_from, gw_to, points_are_raw=points_are_raw)
     if not mlb.empty:
         st.dataframe(mlb, use_container_width=True, hide_index=True)
+        
+        if not mlb.empty:
+    st.dataframe(mlb, use_container_width=True, hide_index=True)
+
+    # Consistency check: does Raw - Hits = Net ?
+    try:
+        raw = mlb["Точки (бруто)"].sum()
+        hits = mlb["Минуси от трансфери"].sum()
+        net = mlb["Точки"].sum()
+        if abs((raw - hits) - net) < 1e-6:
+            st.success("Проверка: Точки (бруто) – Минуси от трансфери = Точки ✅")
+        else:
+            st.error("Проверка: Разминаване! Проверете настройката 'points_are_raw' ❌")
+    except Exception:
+        pass
+
         # Downloads
         csv = mlb.to_csv(index=False).encode("utf-8")
         st.download_button("Download CSV", data=csv, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.csv", mime="text/csv")
