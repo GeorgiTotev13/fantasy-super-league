@@ -648,12 +648,12 @@ points_are_raw = st.toggle(
     help="ON = points are raw from API (subtract hits to get net). OFF = points are already net, add hits back to get raw."
 )
 
-
-    lb = leaderboard_period(league_id, gw_from, gw_to, metric, points_are_raw=points_are_raw)
-    # Ascending for counts/costs, descending for scores
-    asc = metric in ("chip_used", "transfers", "transfers_cost")
-    lb = lb.sort_values("value", ascending=asc)
-    st.dataframe(lb.rename(columns={"value": metric}), use_container_width=True, hide_index=True)
+# Now call leaderboard_period with the flag
+lb = leaderboard_period(league_id, gw_from, gw_to, metric, points_are_raw=points_are_raw)
+# Ascending for counts/costs, descending for scores
+asc = metric in ("chip_used", "transfers", "transfers_cost")
+lb = lb.sort_values("value", ascending=asc)
+st.dataframe(lb.rename(columns={"value": metric}), use_container_width=True, hide_index=True)
 
     st.caption("Notes: Total points already include hit costs. 'Chips used' counts GWs where any chip was active. 'Goals by starting XI' includes bench only when Bench Boost was active.")
 
