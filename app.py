@@ -411,8 +411,8 @@ def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int) -> pd.DataFram
                 t.entry_id,
                 t.player_name,
                 t.team_name,
-                -- raw points (points + hits)
-                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.points ELSE 0 END) AS total_points_raw,
+                -- raw points (before hits)
+                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.points + tes.transfers_cost ELSE 0 END) AS total_points_raw,
                 -- hit cost
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.transfers_cost ELSE 0 END) AS hit_cost,
                 -- net points (already includes hit costs in tes.points)
@@ -423,7 +423,7 @@ def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int) -> pd.DataFram
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.transfers ELSE 0 END) AS transfers_made,
                 -- goals by XI
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.goals_starting_xi ELSE 0 END) AS goals_starting_xi,
-                -- captain raw points
+                -- captain contribution (with multiplier, e.g. TC = 3x)
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.captain_points ELSE 0 END) AS captain_points
             FROM team_event_stats tes
             JOIN teams t ON t.entry_id = tes.entry_id
@@ -455,13 +455,14 @@ def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int) -> pd.DataFram
         # Column order
         cols = [
             "rank", "player_name", "team_name",
-            "total_points_net", "chips_used", "transfers_made", "goals_starting_xi", "captain_points",
+            "total_points_net", "chips_used", "transfers_made",
+            "goals_starting_xi", "captain_points",
             "total_points_raw", "hit_cost",
         ]
         existing = [c for c in cols if c in df.columns]
         df = df[existing]
 
-        # Rename columns for nicer display
+        # Rename columns for display (Bulgarian example)
         df = df.rename(columns={
             "rank": "Позиция",
             "player_name": "Мениджър",
@@ -476,6 +477,7 @@ def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int) -> pd.DataFram
         })
 
         return df
+
 
 
 def monthly_leaderboard_image(df: pd.DataFrame, title: str = "Monthly Leaderboard") -> tuple[bytes, bytes]:
@@ -598,23 +600,25 @@ def main():
     with c4:
         gw_to = st.number_input("GW to", min_value=int(events_df["event"].min()), max_value=int(events_df["event"].max()), value=int(events_df["event"].max()))
     with c5:
-        metric_label = st.selectbox(
-            "Metric",
-            [
-                ("points", "Total points (net) – Z→A"),
-                ("chip_used", "Chips used – A→Z"),
-                ("transfers", "Transfers made – A→Z"),
-                ("goals_starting_xi", "Goals by starting XI – Z→A"),
-                ("captain_base_points", "Captain points (raw) – Z→A"),
-                ("captain_points", "Captain bonus (extra) – Z→A"),
-                ("transfer_efficiency", "Transfer efficiency – Z→A"),
-                ("points_on_bench", "Bench points – Z→A"),
-                ("transfers_cost", "Hit cost – A→Z")
-            ],
-            index=0,
-            format_func=lambda x: x[1],
-        )
+    metric_label = st.selectbox(
+        "Metric",
+        [
+            ("points", "Total GW points (net) – Z→A"),          # from FPL history (already net)
+            ("total_points", "Overall season points – Z→A"),
+            ("chip_used", "Chips used – A→Z"),
+            ("transfers", "Transfers made – A→Z"),
+            ("goals_starting_xi", "Goals by starting XI – Z→A"),
+            ("captain_points", "Captain points (with C/TC) – Z→A"),
+            ("captain_base_points", "Captain points (raw, undoubled) – Z→A"),
+            ("transfer_efficiency", "Transfer efficiency – Z→A"),
+            ("points_on_bench", "Bench points – Z→A"),
+            ("transfers_cost", "Hit cost – A→Z"),
+        ],
+        index=0,
+        format_func=lambda x: x[1],
+    )
     metric = metric_label[0]
+
 
     lb = leaderboard_period(league_id, gw_from, gw_to, metric)
     asc = metric in ("chip_used", "transfers", "transfers_cost")
