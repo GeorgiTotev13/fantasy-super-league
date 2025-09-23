@@ -316,8 +316,19 @@ def ingest_league(league_id: int) -> pd.DataFrame:
                     picks = fetch_picks(entry_id, gw)
                 except Exception:
                     picks = {"picks": [], "active_chip": None}
-                captain_element, captain_points = compute_captain_points(picks, elem_points)
-                captain_base_points = elem_points.get(captain_element, 0)
+                # Captain logic (handles Triple Captain too)
+captain_element = 0
+captain_base_points = 0
+captain_total_points = 0
+
+for p in picks.get("picks", []):
+    if p.get("is_captain"):
+        captain_element = p["element"]
+        base = elem_points.get(captain_element, 0)
+        mult = p.get("multiplier", 1)  # 2 for captain, 3 for triple captain
+        captain_base_points = base
+        captain_total_points = base * mult
+        break
                 active_chip = picks.get("active_chip")
                 # Goals by starting XI (include bench if Bench Boost played)
                 goals_ids = []
@@ -340,13 +351,13 @@ def ingest_league(league_id: int) -> pd.DataFrame:
                     "transfers": h.get("event_transfers", 0),
                     "transfers_cost": h.get("event_transfers_cost", 0),
                     "points_on_bench": h.get("points_on_bench", 0),
-                    "captain_element": captain_element,
-                    "captain_points": captain_points,
+                  "captain_element": captain_element,
+"captain_points": captain_total_points,   # total contribution including captain/triple captain
+"captain_base_points": captain_base_points,
                     "transfer_efficiency": teff,
                     "chip_used": 1 if active_chip else 0,
                     "active_chip": active_chip,
                     "goals_starting_xi": goals_starting_xi,
-                    "captain_base_points": captain_base_points,
                     "created_at": int(time.time()),
                 }
                 save_team_event_stats(conn, row)
@@ -399,7 +410,7 @@ def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int) -> pd.DataFram
                 t.player_name,
                 t.team_name,
                 -- raw points (points + hits)
-                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.points + tes.transfers_cost ELSE 0 END) AS total_points_raw,
+                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.points ELSE 0 END) AS total_points_raw,
                 -- hit cost
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.transfers_cost ELSE 0 END) AS hit_cost,
                 -- net points (already includes hit costs in tes.points)
@@ -411,7 +422,7 @@ def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int) -> pd.DataFram
                 -- goals by XI
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.goals_starting_xi ELSE 0 END) AS goals_starting_xi,
                 -- captain raw points
-                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.captain_base_points ELSE 0 END) AS captain_points
+                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.captain_points ELSE 0 END) AS captain_points
             FROM team_event_stats tes
             JOIN teams t ON t.entry_id = tes.entry_id
             WHERE t.league_id = ?
