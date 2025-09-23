@@ -12,7 +12,7 @@ Notes
 -----
 • Works locally with public FPL API (no auth). 
 • Persists data to a local SQLite file: fpl_tracker.db
-• Supports: league import, per‑GW stats, period leaderboards, and history snapshots.
+• Supports: league import, per‑GW stats, periodic leaderboards, and history snapshots.
 • Tested against the 2024/25+ FPL API format; endpoints are stable historically.
 
 Env vars (optional)
@@ -386,7 +386,7 @@ def get_roster_df(league_id: int) -> pd.DataFrame:
 
 
 def leaderboard_period(league_id: int, gw_from: int, gw_to: int, metric: str) -> pd.DataFrame:
-    """Period leaderboard. 'points' means NET points = points - transfers_cost.
+    """Periodic leaderboard. 'points' means NET points = points - transfers_cost.
        Also supports points_raw and other stored metrics.
     """
     metric_expr = {
@@ -581,7 +581,7 @@ def timeseries_for_team(entry_id: int) -> pd.DataFrame:
 def main():
     st.set_page_config(page_title="FPL Tracker", layout="wide")
     st.title("⚽ FPL Tracker")
-    st.caption("Monitor your mini-league with period leaderboards and history snapshots.")
+    st.caption("Monitor your mini-league with periodic leaderboards and history snapshots.")
 
     init_db()
 
@@ -606,8 +606,8 @@ def main():
 
     st.divider()
 
-    # Period Leaderboards
-    st.subheader("Period Leaderboards")
+    # Periodic Leaderboards
+    st.subheader("Periodic Leaderboards")
     events_df = get_events_df()
     if events_df.empty:
         st.info("No events in DB yet. Click Refresh to pull the season metadata.")
