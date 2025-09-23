@@ -630,14 +630,27 @@ def main():
     st.subheader("Monthly Leaderboard (multi‑criteria)")
     mlb = monthly_leaderboard(league_id, gw_from, gw_to)
     if not mlb.empty:
-        st.dataframe(mlb, use_container_width=True, hide_index=True)
+        # Highlight Top 3 inside Streamlit
+        def highlight_top3(row):
+            if row["Позиция"] == 1:
+                return ["background-color: #ffd700"] * len(row)  # Gold
+            elif row["Позиция"] == 2:
+                return ["background-color: #c0c0c0"] * len(row)  # Silver
+            elif row["Позиция"] == 3:
+                return ["background-color: #cd7f32"] * len(row)  # Bronze
+            else:
+                return [""] * len(row)
+
+        styled = mlb.style.apply(highlight_top3, axis=1)
+        st.dataframe(styled, use_container_width=True, hide_index=True)
+
         # Downloads
         csv = mlb.to_csv(index=False).encode("utf-8")
         st.download_button("Download CSV", data=csv, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.csv", mime="text/csv")
         try:
             png_bytes, jpg_bytes = monthly_leaderboard_image(mlb, title=f"Monthly Leaderboard • GW {gw_from}–{gw_to}")
-            st.download_button("Download PNG (hi‑res)", data=png_bytes, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.png", mime="image/png")
-            st.download_button("Download JPEG (hi‑res)", data=jpg_bytes, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.jpg", mime="image/jpeg")
+            st.download_button("Download PNG (hi-res)", data=png_bytes, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.png", mime="image/png")
+            st.download_button("Download JPEG (hi-res)", data=jpg_bytes, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.jpg", mime="image/jpeg")
             st.image(png_bytes, caption="Preview (PNG)", use_container_width=True)
         except Exception as e:
             st.warning(f"Could not render image export: {e}")
