@@ -31,8 +31,6 @@ import requests
 import streamlit as st
 import io
 import matplotlib.pyplot as plt
-plt.rcParams["font.family"] = "DejaVu Sans"
-
 
 # ------------------------------
 # Constants & API helpers
@@ -316,22 +314,9 @@ def ingest_league(league_id: int) -> pd.DataFrame:
                     picks = fetch_picks(entry_id, gw)
                 except Exception:
                     picks = {"picks": [], "active_chip": None}
-                # Captain logic (handles Triple Captain too)
-                captain_element = 0
-                captain_base_points = 0
-                captain_total_points = 0
-
-                for p in picks.get("picks", []):
-                    if p.get("is_captain"):
-                        captain_element = p["element"]
-                        base = elem_points.get(captain_element, 0)
-                        mult = p.get("multiplier", 1)  # 2 for captain, 3 for triple captain
-                        captain_base_points = base
-                        captain_total_points = base * mult
-                        break
-
+                captain_element, captain_points = compute_captain_points(picks, elem_points)
+                captain_base_points = elem_points.get(captain_element, 0)
                 active_chip = picks.get("active_chip")
-
                 # Goals by starting XI (include bench if Bench Boost played)
                 goals_ids = []
                 for p in picks.get("picks", []):
@@ -353,13 +338,13 @@ def ingest_league(league_id: int) -> pd.DataFrame:
                     "transfers": h.get("event_transfers", 0),
                     "transfers_cost": h.get("event_transfers_cost", 0),
                     "points_on_bench": h.get("points_on_bench", 0),
-                  "captain_element": captain_element,
-"captain_points": captain_total_points,   # total contribution including captain/triple captain
-"captain_base_points": captain_base_points,
+                    "captain_element": captain_element,
+                    "captain_points": captain_points,
                     "transfer_efficiency": teff,
                     "chip_used": 1 if active_chip else 0,
                     "active_chip": active_chip,
                     "goals_starting_xi": goals_starting_xi,
+                    "captain_base_points": captain_base_points,
                     "created_at": int(time.time()),
                 }
                 save_team_event_stats(conn, row)
@@ -386,17 +371,33 @@ def get_roster_df(league_id: int) -> pd.DataFrame:
 
 
 def leaderboard_period(league_id: int, gw_from: int, gw_to: int, metric: str) -> pd.DataFrame:
+    """Flexible period leaderboard.
+    Supports derived metrics like points_net = points - transfers_cost.
+    """
+    metric_expr = {
+        "points_net": "tes.points - tes.transfers_cost",
+        "points_raw": "tes.points",
+        "captain_points": "tes.captain_points",
+        "captain_base_points": "tes.captain_base_points",
+        "transfer_efficiency": "tes.transfer_efficiency",
+        "points_on_bench": "tes.points_on_bench",
+        "transfers_cost": "tes.transfers_cost",
+        "transfers": "tes.transfers",
+        "chip_used": "tes.chip_used",
+    }
+    expr = metric_expr.get(metric, "tes.points - tes.transfers_cost")
+
     with get_conn() as conn:
-        base = """
+        sql = f"""
         SELECT tes.entry_id, t.player_name, t.team_name,
-               SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN {metric} ELSE 0 END) AS value
+               SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN {expr} ELSE 0 END) AS value
         FROM team_event_stats tes
         JOIN teams t ON t.entry_id = tes.entry_id
         WHERE t.league_id = ?
         GROUP BY tes.entry_id
         ORDER BY value DESC
-        """.format(metric=metric)
-        df = pd.read_sql_query(base, conn, params=(gw_from, gw_to, league_id))
+        """
+        df = pd.read_sql_query(sql, conn, params=(gw_from, gw_to, league_id))
         return df
 
 def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int) -> pd.DataFrame:
@@ -411,20 +412,20 @@ def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int) -> pd.DataFram
                 t.entry_id,
                 t.player_name,
                 t.team_name,
-                -- raw points (before hits)
-                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.points ELSE 0 END) AS total_points_raw,
+                -- raw points (points + hits)
+                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.points + tes.transfers_cost ELSE 0 END) AS total_points_raw,
                 -- hit cost
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.transfers_cost ELSE 0 END) AS hit_cost,
-                -- net points (after hits)
-                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.points - tes.transfers_cost ELSE 0 END) AS total_points_net,
+                -- net points (already includes hit costs in tes.points)
+                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.points ELSE 0 END) AS total_points_net,
                 -- chips used
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.chip_used ELSE 0 END) AS chips_used,
                 -- transfers made
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.transfers ELSE 0 END) AS transfers_made,
                 -- goals by XI
                 SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.goals_starting_xi ELSE 0 END) AS goals_starting_xi,
-                -- captain contribution (with multiplier, e.g. TC = 3x)
-                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.captain_points ELSE 0 END) AS captain_points
+                -- captain raw points
+                SUM(CASE WHEN tes.event BETWEEN ? AND ? THEN tes.captain_base_points ELSE 0 END) AS captain_points
             FROM team_event_stats tes
             JOIN teams t ON t.entry_id = tes.entry_id
             WHERE t.league_id = ?
@@ -441,55 +442,30 @@ def monthly_leaderboard(league_id: int, gw_from: int, gw_to: int) -> pd.DataFram
             league_id,
         )
         df = pd.read_sql_query(sql, conn, params=params)
-
-        # Multi-criteria sort
         df = df.sort_values(
             by=["total_points_net", "chips_used", "transfers_made", "goals_starting_xi", "captain_points"],
             ascending=[False, True, True, False, False],
             kind="mergesort",
         ).reset_index(drop=True)
-
-        # Add rank column
         df.insert(0, "rank", df.index + 1)
-
-        # Column order
         cols = [
             "rank", "player_name", "team_name",
-            "total_points_net", "chips_used", "transfers_made",
-            "goals_starting_xi", "captain_points",
+            "total_points_net", "chips_used", "transfers_made", "goals_starting_xi", "captain_points",
             "total_points_raw", "hit_cost",
         ]
         existing = [c for c in cols if c in df.columns]
         df = df[existing]
-
-        # Rename columns for display (Bulgarian example)
-        df = df.rename(columns={
-            "rank": "Позиция",
-            "player_name": "Мениджър",
-            "team_name": "Отбор",
-            "total_points_net": "Точки",
-            "chips_used": "Използвани чипове",
-            "transfers_made": "Трансфери",
-            "goals_starting_xi": "Отбелязани голове",
-            "captain_points": "Точки от капитан",
-            "total_points_raw": "Точки (бруто)",
-            "hit_cost": "Минуси от трансфери"
-        })
-
         return df
 
-
-
 def monthly_leaderboard_image(df: pd.DataFrame, title: str = "Monthly Leaderboard") -> tuple[bytes, bytes]:
-    """Render the monthly leaderboard DataFrame to a high-resolution PNG and JPEG.
+    """Render the monthly leaderboard DataFrame to a high‑resolution PNG and JPEG.
     Returns (png_bytes, jpg_bytes).
-    If df is empty, returns (b"", b"").
     """
-    if df.empty:
-        return b"", b""
-
-    # Only keep display columns
-    show_cols = df.columns.tolist()  # use all columns in their current names
+    # Choose columns for the image
+    show_cols = [
+        c for c in ["rank", "player_name", "team_name", "total_points_net", "chips_used",
+                    "transfers_made", "goals_starting_xi", "captain_points"] if c in df.columns
+    ]
     tab = df[show_cols].copy()
 
     # Figure sizing based on rows/cols
@@ -526,19 +502,16 @@ def monthly_leaderboard_image(df: pd.DataFrame, title: str = "Monthly Leaderboar
 
     # Tight layout and save to buffers
     fig.tight_layout()
-
     buf_png = io.BytesIO()
     fig.savefig(buf_png, format='png', bbox_inches='tight')
     buf_png.seek(0)
 
     buf_jpg = io.BytesIO()
-    fig.savefig(buf_jpg, format='jpeg', bbox_inches='tight')
+    fig.savefig(buf_jpg, format='jpeg', bbox_inches='tight', quality=95)
     buf_jpg.seek(0)
 
     plt.close(fig)
     return buf_png.getvalue(), buf_jpg.getvalue()
-
-
 
 
 def timeseries_for_team(entry_id: int) -> pd.DataFrame:
@@ -603,8 +576,8 @@ def main():
         metric_label = st.selectbox(
             "Metric",
             [
-                ("points", "Total GW points (net) – Z→A"),          # from FPL history (already net)
-                ("total_points", "Overall season points – Z→A"),
+                ("points_net", "Total GW points (net) – Z→A"),
+                ("points_raw", "Total GW points (raw) – Z→A"),
                 ("chip_used", "Chips used – A→Z"),
                 ("transfers", "Transfers made – A→Z"),
                 ("goals_starting_xi", "Goals by starting XI – Z→A"),
@@ -619,8 +592,8 @@ def main():
         )
     metric = metric_label[0]
 
-
     lb = leaderboard_period(league_id, gw_from, gw_to, metric)
+    # Ascending for counts/costs, descending for scores
     asc = metric in ("chip_used", "transfers", "transfers_cost")
     lb = lb.sort_values("value", ascending=asc)
     st.dataframe(lb.rename(columns={"value": metric}), use_container_width=True, hide_index=True)
@@ -638,7 +611,7 @@ def main():
             png_bytes, jpg_bytes = monthly_leaderboard_image(mlb, title=f"Monthly Leaderboard • GW {gw_from}–{gw_to}")
             st.download_button("Download PNG (hi‑res)", data=png_bytes, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.png", mime="image/png")
             st.download_button("Download JPEG (hi‑res)", data=jpg_bytes, file_name=f"monthly_leaderboard_gw{gw_from}-{gw_to}.jpg", mime="image/jpeg")
-            st.image(png_bytes, caption="Preview (PNG)", use_container_width=True)
+            st.image(png_bytes, caption="Preview (PNG)", use_column_width=True)
         except Exception as e:
             st.warning(f"Could not render image export: {e}")
     else:
