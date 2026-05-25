@@ -707,14 +707,9 @@ def main():
     )
 
     st.divider()
-    re  nder_season_awards_tab(
+    render_season_awards_tab(
         db_path=DB_PATH,
         league_id=int(os.getenv("FPL_LEAGUE_ID", "2448"))
-    )
-
-
-if __name__ == "__main__":
-    main()
     )
 
 
