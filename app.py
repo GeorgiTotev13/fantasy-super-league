@@ -25,6 +25,7 @@ import os
 import time
 import sqlite3
 from typing import Dict, List, Tuple
+from season_awards_tab import render_season_awards_tab
 
 import pandas as pd
 import requests
@@ -593,7 +594,11 @@ def main():
             with st.spinner("Fetching league data and updating history…"):
                 roster = ingest_league(league_id)
                 st.success(f"Imported/updated {len(roster)} teams.")
-
+    st.divider()
+    render_season_awards_tab(
+        db_path=DB_PATH,
+        league_id=int(os.getenv("FPL_LEAGUE_ID", "2448"))
+    )
     st.divider()
 
     # Roster
@@ -677,6 +682,8 @@ def main():
         st.info("No data for the selected range yet. Try importing or widen the GW range.")
 
     st.divider()
+    
+    
 
     # Team detail
     st.subheader("Team Timeseries")
@@ -697,6 +704,15 @@ def main():
     st.divider()
     st.caption(
         "Made with ❤️. Data © Premier League – unofficial API. This app stores only public league data locally."
+        st.divider()
+    render_season_awards_tab(
+        db_path=DB_PATH,
+        league_id=int(os.getenv("FPL_LEAGUE_ID", "2448"))
+    )
+
+
+if __name__ == "__main__":
+    main()
     )
 
 
