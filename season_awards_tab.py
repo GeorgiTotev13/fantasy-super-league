@@ -148,8 +148,15 @@ def _winner_rows(df: pd.DataFrame, col: str, mode: str = "max") -> pd.DataFrame:
     clean = df.dropna(subset=[col]).copy()
     if clean.empty:
         return clean
+
     value = clean[col].max() if mode == "max" else clean[col].min()
-    return clean[clean[col] == value].sort_values(["player_name", "entry_name", "event"])
+    winners = clean[clean[col] == value].copy()
+
+    sort_cols = [c for c in ["player_name", "entry_name", "team_name", "event"] if c in winners.columns]
+    if sort_cols:
+        winners = winners.sort_values(sort_cols)
+
+    return winners
 
 
 def _team_totals(df: pd.DataFrame) -> pd.DataFrame:
