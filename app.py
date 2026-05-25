@@ -32,6 +32,7 @@ import requests
 import streamlit as st
 import io
 import matplotlib.pyplot as plt
+import json
 plt.rcParams["font.family"] = "DejaVu Sans"
 
 
@@ -590,6 +591,50 @@ def timeseries_for_team(entry_id: int) -> pd.DataFrame:
 # UI – Streamlit
 # ------------------------------
 
+def export_raw_infographic_data(league_id: int) -> dict:
+    bootstrap = fetch_bootstrap()
+
+    members = []
+    page = 1
+    while True:
+        data = fetch_league_standings(league_id, page)
+        results = data.get("standings", {}).get("results", [])
+        members.extend(results)
+        if data.get("standings", {}).get("has_next"):
+            page += 1
+        else:
+            break
+
+    events = [e["id"] for e in bootstrap.get("events", []) if e.get("finished")]
+
+    live_by_event = {}
+    picks_by_entry_event = {}
+    history_by_entry = {}
+
+    for gw in events:
+        live_by_event[str(gw)] = fetch_event_live(gw)
+
+    for member in members:
+        entry_id = member["entry"]
+        history_by_entry[str(entry_id)] = fetch_entry_history(entry_id)
+
+        picks_by_entry_event[str(entry_id)] = {}
+        for gw in events:
+            try:
+                picks_by_entry_event[str(entry_id)][str(gw)] = fetch_picks(entry_id, gw)
+            except Exception as e:
+                picks_by_entry_event[str(entry_id)][str(gw)] = {"error": str(e)}
+
+    return {
+        "league_id": league_id,
+        "members": members,
+        "events": events,
+        "bootstrap": bootstrap,
+        "live_by_event": live_by_event,
+        "history_by_entry": history_by_entry,
+        "picks_by_entry_event": picks_by_entry_event,
+    }
+
 def main():
     st.set_page_config(page_title="FPL Tracker", layout="wide")
     st.title("⚽ FPL Tracker")
@@ -605,6 +650,17 @@ def main():
             with st.spinner("Fetching league data and updating history…"):
                 roster = ingest_league(league_id)
                 st.success(f"Imported/updated {len(roster)} teams.")
+        if st.button("📦 Export raw infographic data", use_container_width=True):
+            with st.spinner("Fetching all FPL data for infographic…"):
+                raw_data = export_raw_infographic_data(league_id)
+
+            st.download_button(
+                "Download raw_infographic_data.json",
+                data=json.dumps(raw_data, ensure_ascii=False),
+                file_name="raw_infographic_data.json",
+                mime="application/json",
+                use_container_width=True,
+    )
     st.divider()
     render_season_awards_tab(
         db_path=DB_PATH,
