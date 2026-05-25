@@ -704,8 +704,10 @@ def main():
     st.divider()
     st.caption(
         "Made with ❤️. Data © Premier League – unofficial API. This app stores only public league data locally."
-        st.divider()
-    render_season_awards_tab(
+    )
+
+    st.divider()
+    re  nder_season_awards_tab(
         db_path=DB_PATH,
         league_id=int(os.getenv("FPL_LEAGUE_ID", "2448"))
     )
