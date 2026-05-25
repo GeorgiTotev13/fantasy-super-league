@@ -111,6 +111,8 @@ def init_db():
             conn.execute("ALTER TABLE team_event_stats ADD COLUMN goals_starting_xi INTEGER DEFAULT 0")
         if "captain_base_points" not in cols:
             conn.execute("ALTER TABLE team_event_stats ADD COLUMN captain_base_points INTEGER DEFAULT 0")
+        if "own_goals_starting_xi" not in cols:
+            conn.execute("ALTER TABLE team_event_stats ADD COLUMN own_goals_starting_xi INTEGER DEFAULT 0")
 
 
 # ------------------------------
@@ -188,7 +190,12 @@ def build_element_goals_map(event_live: dict) -> Dict[int, int]:
     for e in event_live.get("elements", []):
         m[e["id"]] = e["stats"].get("goals_scored", 0)
     return m
-
+    
+def build_element_own_goals_map(event_live: dict) -> Dict[int, int]:
+    m = {}
+    for e in event_live.get("elements", []):
+        m[e["id"]] = e["stats"].get("own_goals", 0)
+    return m
 
 def compute_captain_points(picks: dict, elem_points: Dict[int, int]) -> Tuple[int, int]:
     """Return (captain_element_id, captain_points_contribution)
@@ -262,6 +269,7 @@ def save_team_event_stats(conn, row: dict):
         "transfers","transfers_cost","points_on_bench","captain_element","captain_points",
         "transfer_efficiency","chip_used","active_chip","goals_starting_xi","captain_base_points",
         "created_at"
+        "own_goals_starting_xi",
     ]
     placeholders = ",".join(["?"] * len(cols))
     values = [row[c] for c in cols]
@@ -312,6 +320,7 @@ def ingest_league(league_id: int) -> pd.DataFrame:
                 live = fetch_event_live(gw)
                 elem_points = build_element_points_map(live)
                 elem_goals = build_element_goals_map(live)
+                elem_own_goals = build_element_own_goals_map(live)
                 # captain
                 try:
                     picks = fetch_picks(entry_id, gw)
@@ -340,6 +349,7 @@ def ingest_league(league_id: int) -> pd.DataFrame:
                     if mult > 0 or (active_chip == "bboost" and mult == 0):
                         goals_ids.append(p["element"])
                 goals_starting_xi = sum(elem_goals.get(eid, 0) for eid in set(goals_ids))
+                own_goals_starting_xi = sum(elem_own_goals.get(eid, 0) for eid in set(goals_ids))
                 # transfer efficiency
                 teff = compute_transfer_efficiency(transfers, gw, elem_points, h)
 
@@ -354,6 +364,7 @@ def ingest_league(league_id: int) -> pd.DataFrame:
                     "transfers": h.get("event_transfers", 0),
                     "transfers_cost": h.get("event_transfers_cost", 0),
                     "points_on_bench": h.get("points_on_bench", 0),
+                    "own_goals_starting_xi": own_goals_starting_xi,
                   "captain_element": captain_element,
 "captain_points": captain_total_points,   # total contribution including captain/triple captain
 "captain_base_points": captain_base_points,
