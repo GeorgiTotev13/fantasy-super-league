@@ -663,7 +663,7 @@ def main():
     )
     st.divider()
     
-    )
+    
     st.divider()
 
     # Roster
