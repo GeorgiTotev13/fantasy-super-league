@@ -662,9 +662,7 @@ def main():
                 use_container_width=True,
     )
     st.divider()
-    render_season_awards_tab(
-        db_path=DB_PATH,
-        league_id=int(os.getenv("FPL_LEAGUE_ID", "2448"))
+    
     )
     st.divider()
 
